@@ -827,7 +827,7 @@ ENDFORM.
 *----------------------------------------------------------------------*
 FORM AV2000_1_CELL_CLICK
   USING pv_av_name
-        pc_gubun   " 'B' 버튼 'D' 떠블클릭 'H' 핫스팟
+        pc_gubun
         ps_row    LIKE lvc_s_row
         ps_col    LIKE lvc_s_col
         ps_row_no LIKE lvc_s_roid.
