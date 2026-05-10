@@ -1,0 +1,886 @@
+*&---------------------------------------------------------------------*
+* 모듈/서브모듈   : SD/SDC
+* Program ID : ZR19A00060
+* Desc       : SY Purchase Auto Processing
+* Transaction: ZR19A00060
+* Creator    : REM0019
+* Create day  : 2026.01.19
+*&---------------------------------------------------------------------*
+*              변경이력
+*-------  ----------    ---------------   -----------------------------
+* No      Changed On    Changed by        C?R Number
+* New     2026.01.22      정세영            작동 테스트
+*&---------------------------------------------------------------------*
+*  ALV => PO를 보여준다 => 버튼 => 하이퍼링크
+*&---------------------------------------------------------------------*
+
+REPORT zr19a00060.
+
+
+INCLUDE : yg1000,                                " 개발 공용 Include
+            yg1000_cn,                           " Conetainer Include
+              yg1000_av.
+
+* ALV
+DATA : go_cc2000_1 TYPE REF TO cl_gui_custom_container,     "#EC NEEDED
+       go_av2000_1 TYPE REF TO cl_gui_alv_grid.
+
+* 선언부
+TABLES: EKKO, VBAP, LIPS, VBRP.             "헤더들
+DATA: gt_itab TYPE TABLE OF zs19a00060.     "인터널 테이블
+DATA: gv_no_atpc TYPE c.                    "AUTO PROCESS 권한
+DATA: gv_atpc_check TYPE i.                 "AUTO PROCESS에서는 이미 존재한다 걸리지 않게 풀어주기 위해서(1:ATPC, 0:그냥 한개씩 하고있음)
+
+
+SELECT-OPTIONS:
+  se_ebeln FOR ekko-ebeln,
+  se_aedat FOR ekko-aedat DEFAULT '20250101' TO '20261231'.
+
+
+*----------------------------------------------------------------------*
+* INITIALIZATION.
+*----------------------------------------------------------------------*
+INITIALIZATION.
+
+
+*----------------------------------------------------------------------*
+* START-OF-SELECTION.
+*----------------------------------------------------------------------*
+START-OF-SELECTION.
+  PERFORM 1000_onli.
+
+*----------------------------------------------------------------------*
+* END-OF-SELECTION.
+*----------------------------------------------------------------------*
+END-OF-SELECTION.
+  PERFORM 1000_afte.
+
+*&---------------------------------------------------------------------*
+*&      Module  2000_STATUS  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE 2000_status OUTPUT.
+
+  SET PF-STATUS '2000'.
+  SET TITLEBAR  '2000'.
+
+ENDMODULE.                 " 2000_STATUS  OUTPUT
+
+
+
+
+
+
+*&---------------------------------------------------------------------*
+*&      Form  1000_ONLI
+*&---------------------------------------------------------------------*
+*       테이블에서 원하는 정보를 가져옴
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM 1000_onli .
+
+  PERFORM zz_check_atpc_auth. "AUTO PROCESS 권한 체크
+
+*===============
+* PO 헤더값을 가지고 옴 (Purchase Doc. 보여줌)
+*===============
+  SELECT * INTO CORRESPONDING FIELDS OF TABLE gt_itab
+  FROM EKKO
+  WHERE ebeln IN se_ebeln AND
+        aedat IN se_aedat.
+
+  PERFORM zz_set_display_data.
+
+ENDFORM.                    " 1000_ONLI
+
+
+
+*&---------------------------------------------------------------------*
+*&      Form  1000_AFTE
+*&---------------------------------------------------------------------*
+*       처음 실행 시 헤더 테이블의 엔트리가 몇 건 조회되었는지 띄운다
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM 1000_afte .
+    DATA: lv_cnt TYPE i.
+
+  CHECK sy-batch = zlea_.
+
+  DESCRIBE TABLE gt_itab LINES lv_cnt.
+  MESSAGE s000(oo) WITH lv_cnt '건 조회되었습니다.'.
+
+  "데이터가 있으면 호출
+  IF lv_cnt > 0.
+    CALL SCREEN 2000.
+  ENDIF.
+ENDFORM.                    " 1000_AFTE
+
+
+
+*&---------------------------------------------------------------------*
+*&      Module  AV2000_X_MAKE  OUTPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE av2000_x_make OUTPUT.
+
+  0o_cc_make 'GO_CC2000_1' 'GV_CX2000_1'.
+
+  PERFORM 0o_av_make
+   TABLES gt_itab
+    USING 'GO_AV2000_1' go_cc2000_1
+          'ZS19A00060'   " 아밥 딕셔너리에 선언된 테이블, 구조, 뷰를
+*                    이용해서 필드카테고리를 정의할 수 있다.
+          ''.
+
+ENDMODULE.                 " AV2000_X_MAKE  OUTPUT
+
+
+*&---------------------------------------------------------------------*
+*& Form av2000_1_toolbar
+*&---------------------------------------------------------------------*
+*& 툴바에 커스텀 버튼 추가
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM av2000_1_toolbar
+  USING pv_av_name
+        po_object TYPE REF TO cl_alv_event_toolbar_set
+        pv_interactive.
+
+  DATA: ls_tool TYPE stb_button.
+
+  CLEAR ls_tool.
+  ls_tool-butn_type = zlea_3.
+
+*== Create S/O ==
+  CLEAR ls_tool.
+  ls_tool-butn_type = zlea_0.
+  ls_tool-function = zlea_crso.
+  ls_tool-icon = icon_led_inactive.
+  ls_tool-text = TEXT-T01.
+  APPEND ls_tool TO po_object->mt_toolbar.
+
+*== Create D/O ==
+  CLEAR ls_tool.
+  ls_tool-butn_type = zlea_0.
+  ls_tool-function = zlea_crdo.
+  ls_tool-icon = icon_led_inactive.
+  ls_tool-text = TEXT-T02.
+  APPEND ls_tool TO po_object->mt_toolbar.
+
+*== Create G/I ==
+  CLEAR ls_tool.
+  ls_tool-butn_type = zlea_0.
+  ls_tool-function = zlea_crgi.
+  ls_tool-icon = icon_led_inactive.
+  ls_tool-text = TEXT-T03.
+  APPEND ls_tool TO po_object->mt_toolbar.
+
+*== Create B/I ==
+  CLEAR ls_tool.
+  ls_tool-butn_type = zlea_0.
+  ls_tool-function = zlea_crbi.
+  ls_tool-icon = icon_led_inactive.
+  ls_tool-text = TEXT-T04.
+  APPEND ls_tool TO po_object->mt_toolbar.
+
+  "구분선
+  CLEAR ls_tool.
+  ls_tool-butn_type = zlea_3.
+  APPEND ls_tool TO po_object->mt_toolbar.
+
+*== Auto Process ==
+  CLEAR ls_tool.
+  ls_tool-butn_type = zlea_0.
+  ls_tool-function = 'ATPC'. "auto processing
+  ls_tool-icon = icon_transfer.
+  ls_tool-text = TEXT-T05.
+
+  IF gv_no_atpc = 'X'.
+    ls_tool-disabled = 'X'. "권한 비활성화
+  ENDIF.
+
+  APPEND ls_tool TO po_object->mt_toolbar.
+
+
+ENDFORM.
+
+
+
+*&---------------------------------------------------------------------*
+*&      Form  ZZ_SET_DISPLAY_DATA
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM zz_set_display_data .
+*===============
+* PO를 기준으로 뒤 문서를 조회해야 한다!!
+*===============
+*PO->SO->DO->GI->BI
+
+  CHECK gt_itab IS NOT INITIAL.
+
+  LOOP AT gt_itab ASSIGNING FIELD-SYMBOL(<gs_itab>).
+    DATA: lv_wadat TYPE zlikp19-WADAT_IST.
+
+    CLEAR: <gs_itab>-sosta,
+           <gs_itab>-dosta,
+           <gs_itab>-gista,
+           <gs_itab>-bista,
+           <gs_itab>-vaeln,
+           <gs_itab>-vleln,
+           <gs_itab>-vfeln.
+
+    "SO 가지고 옴 (VAELN)
+    SELECT SINGLE VBELN INTO <gs_itab>-VAELN
+    FROM ZVBAK19
+    WHERE BSTNK = <gs_itab>-EBELN.
+
+    IF sy-subrc = 0.
+      <gs_itab>-SOSTA = 'S'.           "초록불 바꾸기
+
+
+      "DO 가지고 옴 (VLELN)
+      SELECT SINGLE VBELN INTO <gs_itab>-VLELN
+      FROM ZLIPS19
+      WHERE VGBEL = <gs_itab>-VAELN.
+
+      IF sy-subrc = 0.
+        <gs_itab>-DOSTA = 'S'.         "초록불 바꾸기
+
+
+        "GI 가지고 옴 (LIKP의 WADAT_IST)
+        CLEAR lv_wadat.
+        SELECT SINGLE wadat_ist INTO lv_wadat
+        FROM ZLIKP19
+        WHERE vbeln = <gs_itab>-vleln.
+
+        IF sy-subrc = 0 AND lv_wadat IS NOT INITIAL.
+          <gs_itab>-GISTA = 'S'.        "초록불 바꾸기
+
+
+          "BI 가지고 옴 (VFELN)
+          SELECT SINGLE VBELN INTO <gs_itab>-VFELN
+          FROM ZVBRP19
+          WHERE VGBEL = <gs_itab>-VLELN.
+
+          IF sy-subrc = 0.
+            <gs_itab>-BISTA = 'S'.       "초록불 바꾸기
+          ENDIF.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+
+  ENDLOOP.
+ENDFORM.                    " ZZ_SET_DISPLAY_DATA
+
+
+*&---------------------------------------------------------------------*
+*&      Form  zz_check_atpc_auth
+*&---------------------------------------------------------------------*
+*       Auto Process (ATPC) 권한
+*----------------------------------------------------------------------*
+FORM zz_check_atpc_auth.
+  DATA: lv_loekz TYPE ZT19ACOM10-LOEKZ,
+        lv_v3  TYPE zt19acom10-VALU3,
+        lv_v4  TYPE zt19acom10-VALU4.
+
+  CLEAR: gv_no_atpc, lv_loekz, lv_v3, lv_v4.
+
+  "Delete Flag
+  SELECT SINGLE loekz valu3 valu4 INTO (lv_loekz, lv_v3, lv_v4)
+  FROM ZT19ACOM10
+  WHERE PCODE = 'SD_CREATE_AUTO' AND
+        UNAME = sy-uname.
+
+  "아무것도 안담김
+  IF sy-subrc <> 0.
+    gv_no_atpc = 'X'.
+    RETURN.
+  ENDIF.
+
+  "DELETE FLAG 체크면 무조건 안됨
+  IF lv_loekz = 'X'.
+    gv_no_atpc = 'X'.
+    RETURN.
+  ENDIF.
+
+  "V3,V4 다 체크되어야 ATPC 허용
+  IF lv_v3 = 'X' AND lv_v4 = 'X'.
+    CLEAR gv_no_atpc. "사용O
+  ELSE.
+    gv_no_atpc = 'X'. "사용X
+  ENDIF.
+
+ENDFORM.
+
+
+
+*========================================*
+* CREATE 버튼 클릭했을 때 자동호출
+* (AV2000_1_UC_~ 는 클릭 시 자동으로 호출하게 함)
+*========================================*
+*&---------------------------------------------------------------------*
+*&      Form  AV2000_1_UC_CRSO
+*&---------------------------------------------------------------------*
+FORM av2000_1_uc_crso USING pv_av_name.
+  PERFORM zz_create_so.
+  go_av2000_1->refresh_table_display( ).
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  AV2000_1_UC_CRDO
+*&---------------------------------------------------------------------*
+FORM av2000_1_uc_crdo USING pv_av_name.
+  PERFORM zz_create_do.
+  go_av2000_1->refresh_table_display( ).
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  AV2000_1_UC_CRGI
+*&---------------------------------------------------------------------*
+FORM av2000_1_uc_crgi USING pv_av_name.
+  PERFORM zz_create_gi.
+  go_av2000_1->refresh_table_display( ).
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  AV2000_1_UC_CRBI
+*&---------------------------------------------------------------------*
+FORM av2000_1_uc_crbi USING pv_av_name.
+  PERFORM zz_create_bi.
+  go_av2000_1->refresh_table_display( ).
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  AV2000_1_UC_ATPC
+*   auto processing (ATPC) 클릭하면 한번에 한 줄 끝까지!
+*&---------------------------------------------------------------------*
+FORM av2000_1_uc_atpc USING pv_av_name.
+  gv_atpc_check = 1. "ATPC입니다~
+  PERFORM zz_create_so.
+  PERFORM zz_create_do.
+  PERFORM zz_create_gi.
+  PERFORM zz_create_bi.
+
+  gv_atpc_check = 0. "이제 아님
+  go_av2000_1->refresh_table_display( ).
+ENDFORM.
+
+
+
+*&---------------------------------------------------------------------*
+*&      Form  ZZ_CREATE_SO
+*&---------------------------------------------------------------------*
+*       Create SO
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM zz_create_so .
+  DATA: lt_rows   TYPE TABLE OF lvc_s_roid, "몇 번째 행을 선택했는지 알려줌
+        ls_po_h   TYPE zekko19,
+        lt_po_i   TYPE TABLE OF zekpo19,
+        ls_return TYPE bapiret2.
+
+*===============
+* 행 선택 안되어있을 경우
+*===============
+  CALL METHOD go_av2000_1->get_selected_rows IMPORTING et_row_no = lt_rows[].
+  IF lt_rows IS INITIAL.
+    MESSAGE s000(oo) WITH '행을 선택하세요' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+*===============
+* 행 번호로 데이터 가져오기
+*===============
+  READ TABLE lt_rows INDEX 1 ASSIGNING FIELD-SYMBOL(<ls_rows>).
+  READ TABLE gt_itab INDEX <ls_rows>-row_id ASSIGNING FIELD-SYMBOL(<gs_itab>).
+  CHECK sy-subrc = 0.
+
+*===============
+* 중복검사
+*===============
+  IF <gs_itab>-vaeln IS NOT INITIAL.
+    IF gv_atpc_check = 0. "아님
+      MESSAGE i000(oo) WITH 'SO already exists.'.
+      RETURN. "서브루틴 종료
+    ELSE. "ATPC이면
+      EXIT. "현재 실행 중인 블록만 빠져나감
+    ENDIF.
+  ENDIF.
+
+
+*===============
+* 헤더, 아이템 걸러내기
+*===============
+  CLEAR ls_po_h.
+  MOVE-CORRESPONDING <gs_itab> TO ls_po_h.
+
+  SELECT * INTO CORRESPONDING FIELDS OF TABLE lt_po_i
+    FROM EKPO
+    WHERE ebeln = <gs_itab>-ebeln.
+
+  IF lt_po_i IS INITIAL.
+    MESSAGE e000(oo) WITH '아이템이 없습니다.'.
+    RETURN.
+  ENDIF.
+
+
+*===============
+* SO 만들기! (method: ZZ_GET_SO_RTN)
+*===============
+  CALL METHOD zcl19_lec_auto_plan=>zz_get_so_rtn
+    EXPORTING
+      is_po_h   = ls_po_h     " ZEKK019 구조
+      it_po_i   = lt_po_i      " ZEKPO19 구조
+    IMPORTING
+      es_return = ls_return.
+
+
+
+
+
+  IF ls_return-type = 'S'.              "성공이면
+    <gs_itab>-vaeln = ls_return-field.
+    <gs_itab>-sosta = 'S'.
+    MESSAGE s000(oo) WITH 'SO 생성됨!: ' ls_return-field.
+  ELSE.
+    MESSAGE s000(oo) WITH 'SO 생성 실패...' DISPLAY LIKE 'E'.
+  ENDIF.
+
+ENDFORM.                    " ZZ_CREATE_SO
+
+
+*&---------------------------------------------------------------------*
+*&      Form  ZZ_CREATE_DO
+*&---------------------------------------------------------------------*
+*       Create DO
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM zz_create_do .
+  DATA: lt_rows   TYPE TABLE OF lvc_s_roid,   "선택된 행 번호
+        ls_so_h   TYPE zvbak19,
+        lt_so_i   TYPE TABLE OF zvbap19,
+        ls_return TYPE bapiret2.
+
+  CALL METHOD go_av2000_1->get_selected_rows
+    IMPORTING
+      et_row_no = lt_rows[].
+
+  IF lt_rows IS INITIAL.
+    MESSAGE s000(oo) WITH '행을 선택하세요' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+*===============
+* 행 번호로 데이터 가져오기
+*===============
+  READ TABLE lt_rows INDEX 1 ASSIGNING FIELD-SYMBOL(<ls_rows>).
+  READ TABLE gt_itab INDEX <ls_rows>-row_id ASSIGNING FIELD-SYMBOL(<gs_itab>).
+  CHECK sy-subrc = 0.
+
+
+*===============
+* 단계별 실행(SO있어야 가능하게)
+*===============
+  IF <gs_itab>-VAELN IS INITIAL. "SO칸이 비어있음
+    MESSAGE s000(oo) WITH 'SO가 아직 생성되지 않았습니다!' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+
+*===============
+* 중복 체크
+*===============
+  IF <gs_itab>-vleln IS NOT INITIAL.
+    IF gv_atpc_check = 0.
+      MESSAGE i000(oo) WITH 'DO already exists.'.
+      RETURN.
+    ELSE.
+      EXIT.
+    ENDIF.
+  ENDIF.
+
+*===============
+* 헤더, 아이템 가져오기
+*===============
+  CLEAR ls_so_h.
+  SELECT SINGLE * INTO ls_so_h
+    FROM zvbak19
+    WHERE vbeln = <gs_itab>-vaeln.
+
+*  IF sy-subrc <> 0.
+*    MESSAGE e000(oo) WITH '헤더가 없습니다.'.
+*    RETURN.
+*  ENDIF.
+
+  SELECT * INTO CORRESPONDING FIELDS OF TABLE lt_so_i
+    FROM zvbap19
+    WHERE vbeln = <gs_itab>-vaeln.
+
+  IF lt_so_i IS INITIAL.
+    MESSAGE e000(oo) WITH '아이템이 없습니다.'.
+    RETURN.
+  ENDIF.
+
+*===============
+* DO 만들기! (method: ZZ_GET_DO_RTN)
+*===============
+  CALL METHOD zcl19_lec_auto_plan=>zz_get_do_rtn
+    EXPORTING
+      is_so_h   = ls_so_h
+      it_so_i   = lt_so_i
+    IMPORTING
+      es_return = ls_return.
+
+
+
+  IF ls_return-type = 'S'.
+    <gs_itab>-vleln = ls_return-field.
+    <gs_itab>-dosta = 'S'.
+    MESSAGE s000(oo) WITH 'DO 생성됨!: ' ls_return-field.
+  ELSE.
+    MESSAGE s000(oo) WITH 'DO 생성 실패...' DISPLAY LIKE 'E'.
+  ENDIF.
+
+
+ENDFORM.                    " ZZ_CREATE_DO
+
+
+*&---------------------------------------------------------------------*
+*&      Form  ZZ_CREATE_GI
+*&---------------------------------------------------------------------*
+*       Create GI
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM zz_create_gi .
+  DATA: lt_rows   TYPE TABLE OF lvc_s_roid,   "선택된 행 번호
+        ls_likp   TYPE ZLIKP19,
+        lt_lips   TYPE TABLE OF ZLIPS19,
+        ls_return TYPE bapiret2.
+
+  CALL METHOD go_av2000_1->get_selected_rows
+    IMPORTING
+      et_row_no = lt_rows[].
+
+  IF lt_rows IS INITIAL.
+    MESSAGE s000(oo) WITH '행을 선택하세요' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+*===============
+* 행 번호로 데이터 가져오기
+*===============
+  READ TABLE lt_rows INDEX 1 ASSIGNING FIELD-SYMBOL(<ls_rows>).
+  READ TABLE gt_itab INDEX <ls_rows>-row_id ASSIGNING FIELD-SYMBOL(<gs_itab>).
+  CHECK sy-subrc = 0.
+
+
+*===============
+* 단계별 실행(DO있어야 가능하게)
+*===============
+  IF <gs_itab>-VLELN IS INITIAL. "DO칸이 비어있음
+    MESSAGE s000(oo) WITH 'DO가 아직 생성되지 않았습니다!' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+
+*===============
+* 중복 체크
+*===============
+  IF <gs_itab>-gista = 'S'. "GISTA에 불이 들어와 있으면
+    IF gv_atpc_check = 0.
+      MESSAGE i000(oo) WITH 'GI already exists.'.
+      RETURN.
+    ELSE.
+      EXIT.
+    ENDIF.
+  ENDIF.
+
+
+*===============
+* 헤더 가져오기(WADAT_IST만 쓰면 되니까)
+*===============
+  SELECT SINGLE * INTO ls_likp
+  FROM ZLIKP19
+  WHERE VBELN = <gs_itab>-VLELN.
+
+
+
+*===============
+* GI 만들기! (method: ZZ_GET_GI_RTN)
+*===============
+
+  CALL METHOD zcl19_lec_auto_plan=>zz_get_gi_rtn
+    IMPORTING
+      ES_RETURN = ls_return
+    CHANGING
+      CS_DO_H = ls_likp.
+
+
+
+  IF ls_return-type = 'S'.
+    <gs_itab>-gista = 'S'.
+    MESSAGE s000(oo) WITH 'GI 생성됨!'.
+  ELSE.
+    MESSAGE s000(oo) WITH 'GI 생성 실패...' DISPLAY LIKE 'E'.
+  ENDIF.
+
+
+ENDFORM.                    " ZZ_CREATE_GI
+
+
+
+
+*&---------------------------------------------------------------------*
+*&      Form  ZZ_CREATE_BI
+*&---------------------------------------------------------------------*
+*       Create BI (do->bi)
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM zz_create_bi .
+  DATA: lt_rows   TYPE TABLE OF lvc_s_roid,   "선택된 행 번호
+        ls_do_h   TYPE ZLIKP19,
+        lt_do_i    TYPE TABLE OF ZLIPS19,
+        ls_return TYPE bapiret2.
+
+  CALL METHOD go_av2000_1->get_selected_rows
+    IMPORTING
+      et_row_no = lt_rows[].
+
+  IF lt_rows IS INITIAL.
+    MESSAGE s000(oo) WITH '행을 선택하세요' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+
+*===============
+* 행 번호로 데이터 가져오기
+*===============
+  READ TABLE lt_rows INDEX 1 ASSIGNING FIELD-SYMBOL(<ls_rows>).
+  READ TABLE gt_itab INDEX <ls_rows>-row_id ASSIGNING FIELD-SYMBOL(<gs_itab>).
+  CHECK sy-subrc = 0.
+
+
+*===============
+* 단계별 실행(GI있어야 가능하게)
+*===============
+  IF <gs_itab>-GISTA <> 'S'. "GI는 셀이 없어서 모양으로 판단
+    MESSAGE s000(oo) WITH 'GI가 아직 생성되지 않았습니다!' DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+
+*===============
+* 중복 체크
+*===============
+  IF <gs_itab>-BISTA = 'S'.
+    IF gv_atpc_check = 0.
+      MESSAGE i000(oo) WITH 'BI already exists.'.
+      RETURN.
+    ELSE.
+      EXIT.
+    ENDIF.
+  ENDIF.
+
+
+*===============
+* DO의 헤더, 아이템 가져오기
+*===============
+  CLEAR ls_do_h.
+
+  SELECT SINGLE * INTO ls_do_h
+  FROM ZLIKP19
+  WHERE vbeln = <gs_itab>-VLELN.
+
+  SELECT * INTO CORRESPONDING FIELDS OF TABLE lt_do_i
+  FROM ZLIPS19
+  WHERE vbeln = <gs_itab>-VLELN.
+*  IF sy-subrc <> 0.
+*    MESSAGE e000(oo) WITH '헤더가 없습니다.'.
+*    RETURN.
+*  ENDIF.
+*  IF lt_do_i IS INITIAL.
+*    MESSAGE e000(oo) WITH '아이템이 없습니다.'.
+*    RETURN.
+*  ENDIF.
+
+
+*===============
+* BI 만들기! (method: ZZ_GET_BI_RTN)
+*===============
+  CALL METHOD zcl19_lec_auto_plan=>zz_get_bi_rtn
+    EXPORTING
+      IS_DO_H   = ls_do_h
+      IT_DO_I   = lt_do_i
+    IMPORTING
+      es_return = ls_return.
+
+
+
+  IF ls_return-type = 'S'.
+    <gs_itab>-VFELN = ls_return-field.
+    <gs_itab>-bista = 'S'.
+    MESSAGE s000(oo) WITH 'BI 생성됨!: ' ls_return-field.
+  ELSE.
+    MESSAGE s000(oo) WITH 'BI 생성 실패...' DISPLAY LIKE 'E'.
+  ENDIF.
+
+
+ENDFORM.                    " ZZ_CREATE_BI
+
+
+
+
+
+
+
+
+*================ 이 밑으로 ALV ================
+
+
+
+
+*----------------------------------------------------------------------*
+* Form AV2000_1_SET_BEFORE
+*----------------------------------------------------------------------*
+* ※ 이 서브루틴은 동적으로 호출합니다. 삭제 전 사용처를 확인하세요.
+* ※ 이 서브루틴의 파라미터는 사용하는 곳이 없더라도 삭제 하지 마세요.
+*----------------------------------------------------------------------*
+*            ★필수작성★ Form문 기능/내용(NXX 표기하여 작성)
+*----------------------------------------------------------------------*
+* N01 : GO_AV2000_1 Field Catalog, Layout, Variant, Sort 등 설정.
+*----------------------------------------------------------------------*
+FORM AV2000_1_set_before USING pv_av_name.
+
+* GS_ZS_AV_LAYOUT
+  GS_ZS_AV_LAYOUT-ZEBRA = 'X'.
+  GS_ZS_AV_LAYOUT-SEL_MODE = 'A'.
+* GT_ZT_AV_FCAT
+  0O_AV_FCAT_FIELD : 'S' 'EBELN' '',  " Purchasing Doc.
+                     ' ' 'COLTEXT' 'Purchasing Doc.',
+                     ' ' 'KEY' 'X',
+                     ' ' 'EMPHASIZE' 'C110',
+                     ' ' 'OUTPUTLEN' '000015',
+                     'E' 'HOTSPOT' 'X'.
+
+  0O_AV_FCAT_FIELD : 'S' 'SOSTA' '',  " STATUS
+                     ' ' 'COLTEXT' 'S/O',
+                     ' ' 'OUTPUTLEN' '000010',
+                     'E' 'EMPHASIZE' 'C300'.
+
+  0O_AV_FCAT_FIELD : 'S' 'DOSTA' '',  " STATUS
+                     ' ' 'COLTEXT' 'D/O',
+                     ' ' 'OUTPUTLEN' '000010',
+                     'E' 'EMPHASIZE' 'C300'.
+
+  0O_AV_FCAT_FIELD : 'S' 'GISTA' '',  " STATUS
+                     ' ' 'COLTEXT' 'G/I',
+                     ' ' 'OUTPUTLEN' '000010',
+                     'E' 'EMPHASIZE' 'C300'.
+
+  0O_AV_FCAT_FIELD : 'S' 'BISTA' '',  " STATUS
+                     ' ' 'COLTEXT' 'Billing',
+                     ' ' 'OUTPUTLEN' '000010',
+                     'E' 'EMPHASIZE' 'C300'.
+
+  0O_AV_FCAT_FIELD : 'S' 'VAELN' '',  " Sales Document
+                     ' ' 'COLTEXT' 'S/O #',
+                     ' ' 'EMPHASIZE' 'C500',
+                     ' ' 'OUTPUTLEN' '000016',
+                     'E' 'HOTSPOT' 'X'.
+
+  0O_AV_FCAT_FIELD : 'S' 'VLELN' '',  " Delivery
+                     ' ' 'COLTEXT' 'D/O #',
+                     ' ' 'EMPHASIZE' 'C500',
+                     ' ' 'OUTPUTLEN' '000016',
+                     'E' 'HOTSPOT' 'X'.
+
+  0O_AV_FCAT_FIELD : 'S' 'VFELN' '',  " Billing Doc.
+                     ' ' 'COLTEXT' 'Billing #',
+                     ' ' 'EMPHASIZE' 'C500',
+                     ' ' 'OUTPUTLEN' '000016',
+                     'E' 'HOTSPOT' 'X'.
+
+ENDFORM.
+
+
+*----------------------------------------------------------------------*
+* Form AV2000_1_CELL_CLICK
+*----------------------------------------------------------------------*
+* ※ 이 서브루틴은 동적으로 호출합니다. 삭제 전 사용처를 확인하세요.
+* ※ 이 서브루틴의 파라미터는 사용하는 곳이 없더라도 삭제 하지 마세요.
+*----------------------------------------------------------------------*
+*            ★필수작성★ Form문 기능/내용(NXX 표기하여 작성)
+*----------------------------------------------------------------------*
+* N01 : GO_AV2000_1 BUTTON / DOUBLE / HOTSPOT _CLICK 이벤트 처리.
+*----------------------------------------------------------------------*
+* 핫스팟 표시해둔 열(디스플레이 되게!)
+*----------------------------------------------------------------------*
+FORM AV2000_1_CELL_CLICK
+  USING pv_av_name
+        pc_gubun   " 'B' 버튼 'D' 떠블클릭 'H' 핫스팟
+        ps_row    LIKE lvc_s_row
+        ps_col    LIKE lvc_s_col
+        ps_row_no LIKE lvc_s_roid.
+
+  READ TABLE GT_ITAB ASSIGNING FIELD-SYMBOL(<gs_itab>)
+                         INDEX ps_row_no-row_id.            "현재 클릭한 행 골라줌
+  CHECK sy-subrc EQ 0.
+
+  CASE ps_col-fieldname.
+    WHEN 'EBELN'. "SHOW PO
+      SET PARAMETER ID 'BES' FIELD <gs_itab>-ebeln.
+      CALL TRANSACTION 'ME23N' AND SKIP FIRST SCREEN.
+
+
+    WHEN 'VAELN'. "DISPLAY SO
+      EXPORT gv_display_60 = 'X' TO MEMORY ID 'DISPLAY_SO'. "이름, 버튼 없애기(20)
+
+      IF <gs_itab>-VAELN IS NOT INITIAL.
+        SUBMIT ZR19A00020
+        WITH so_vbeln = <gs_itab>-VAELN
+        WITH so_erdat IN se_aedat
+        AND RETURN.
+      ENDIF.
+
+
+    WHEN 'VLELN'. "DISPLAY DO
+      EXPORT gv_display_60 = 'X' TO MEMORY ID 'DISPLAY_DO'. "이름, 버튼 없애기(40)
+
+      IF <gs_itab>-VLELN IS NOT INITIAL.
+        SUBMIT ZR19A00040
+        WITH so_vbeln = <gs_itab>-VLELN
+        WITH so_erdat IN se_aedat
+        AND RETURN.
+      ENDIF.
+
+    WHEN 'VFELN'. "DISPLAY BI
+      IF <gs_itab>-VFELN IS NOT INITIAL.
+      "SUBMIT으로 50의 스크린을 띄운다(선택한 줄 vfeln값만 선택해서 띄움)
+        SUBMIT zr19a00050
+        WITH so_vbeln = <gs_itab>-VFELN
+        WITH so_erdat IN se_aedat
+        AND RETURN.
+      ENDIF.
+  ENDCASE.
+
+ENDFORM.

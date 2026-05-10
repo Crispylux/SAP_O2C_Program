@@ -1,0 +1,600 @@
+*&---------------------------------------------------------------------*
+* 모듈/서브모듈   : SD/SDC
+* Program ID : ZR19A00010
+* Desc       : Create PO -> SO
+* Transaction: ZR1900080
+* Creator    : REM0019
+* Create day  : 2026.01.10
+*&---------------------------------------------------------------------*
+*              변경이력
+*-------  ----------    ---------------   -----------------------------
+* No      Changed On    Changed by        C?R Number
+* New     2026.01.10    정세영                 최초작성
+*&---------------------------------------------------------------------*
+
+REPORT zr19a00010.
+
+*~만능 도구상자(반드시 넣어 주기!)~
+INCLUDE : yg1000,                                " 개발 공용 Include
+            yg1000_cn,                           " CoNtainer Include
+              yg1000_av.
+
+DATA : go_dc2000_1 TYPE REF TO cl_gui_docking_container,    "#EC NEEDED
+       go_sc2000_1 TYPE REF TO cl_gui_splitter_container,   "#EC NEEDED
+       go_ic2000_1 TYPE REF TO cl_gui_container,            "#EC NEEDED
+       go_av2000_1 TYPE REF TO cl_gui_alv_grid,             "#EC NEEDED
+       go_ic2000_2 TYPE REF TO cl_gui_container,            "#EC NEEDED
+       go_av2000_2 TYPE REF TO cl_gui_alv_grid,             "#EC NEEDED
+       go_ic2000_3 TYPE REF TO cl_gui_container,            "#EC NEEDED
+       go_tx2000_1 TYPE REF TO cl_gui_textedit.             "#EC NEEDED
+
+
+TABLES: ekko, ekpo.
+DATA: gt_ekko   TYPE TABLE OF zekko19. "EKKO
+DATA: gt_ekpo_t TYPE TABLE OF zekpo19 WITH NON-UNIQUE SORTED KEY idx01 "헤더에서 하나 선택 시 거기에 해당하는 아이템만 모아서 보여주기 위해 만든 테이블
+        COMPONENTS ebeln.
+DATA: gt_ekpo   TYPE TABLE OF zekpo19.
+
+* PO_SO Link
+DATA: gt_poso TYPE TABLE OF zvbak19 WITH NON-UNIQUE SORTED KEY idx01
+        COMPONENTS bstnk.
+
+SELECT-OPTIONS:
+ so_ebeln FOR ekko-ebeln,
+ so_aedat FOR ekko-aedat.
+
+
+*----------------------------------------------------------------------*
+* INITIALIZATION.
+*----------------------------------------------------------------------*
+INITIALIZATION.
+
+
+*----------------------------------------------------------------------*
+* START-OF-SELECTION. - 인터널테이블 만들어줌
+*----------------------------------------------------------------------*
+START-OF-SELECTION.
+  PERFORM 1000_onli.
+
+*----------------------------------------------------------------------*
+* END-OF-SELECTION. - ALV 보여주는역할
+*----------------------------------------------------------------------*
+END-OF-SELECTION.
+  PERFORM 1000_afte.
+
+
+
+
+
+*&---------------------------------------------------------------------*
+*&      Form  1000_ONLI
+*&---------------------------------------------------------------------*
+*       EKKO → EKPO → ZVBAK19 (데이터 조회, 저장)
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM 1000_onli .
+*  DATA: lt_ekpov TYPE SORTED TABLE OF ekpo WITH UNIQUE KEY ebeln.
+  DATA: lt_ekpov TYPE TABLE OF zekko19.
+  DATA: lt_ekpo  TYPE TABLE OF ekpo WITH NON-UNIQUE SORTED KEY idx01
+        COMPONENTS ebeln.
+
+  DATA: lt_vbak19v TYPE TABLE OF zvbak19.
+
+
+
+  REFRESH: gt_ekko, gt_ekpo, gt_poso.
+
+  SELECT * INTO CORRESPONDING FIELDS OF TABLE gt_ekko
+    FROM ekko
+    WHERE ebeln IN so_ebeln AND
+          aedat IN so_aedat.
+
+***  lt_ekpov = CORRESPONDING #( gt_ekko DISCARDING DUPLICATES
+***                              MAPPING ebeln = ebeln ).
+
+  lt_ekpov = gt_ekko.
+  sort lt_ekpov by ebeln.
+  delete ADJACENT DUPLICATES FROM lt_ekpov COMPARING ebeln.
+
+  IF lt_ekpov IS NOT INITIAL.
+    SELECT * INTO CORRESPONDING FIELDS OF TABLE gt_ekpo_t
+      FROM ekpo
+      FOR ALL ENTRIES IN lt_ekpov
+      WHERE ebeln = lt_ekpov-ebeln.
+
+* 자릿수 충돌
+***    SELECT bstnk vbeln INTO CORRESPONDING FIELDS OF TABLE gt_poso
+***      FROM zvbak19
+***      FOR ALL ENTRIES IN lt_ekpov
+***      WHERE bstnk+0(10) = lt_ekpov-ebeln.
+
+    LOOP AT lt_ekpov ASSIGNING FIELD-SYMBOL(<ls_ekpov>).
+      CHECK <ls_ekpov>-ebeln IS NOT INITIAL.
+      APPEND INITIAL LINE TO lt_vbak19v ASSIGNING
+      FIELD-SYMBOL(<ls_vbak19v>).
+      <ls_vbak19v>-bstnk = <ls_ekpov>-ebeln.
+    ENDLOOP.
+
+    SORT lt_vbak19v BY bstnk.
+    DELETE ADJACENT DUPLICATES FROM lt_vbak19v COMPARING bstnk.
+    IF lt_vbak19v IS NOT INITIAL.
+      SELECT bstnk vbeln
+        INTO CORRESPONDING FIELDS OF TABLE gt_poso
+        FROM zvbak19
+        FOR ALL ENTRIES IN lt_vbak19v
+        WHERE bstnk = lt_vbak19v-bstnk.
+    ENDIF.
+
+  ENDIF.
+ENDFORM.                    " 1000_ONLI
+
+
+
+
+*&---------------------------------------------------------------------*
+*&      Form  1000_AFTE
+*&---------------------------------------------------------------------*
+*       처음 실행했을 때 HEADER TABLE의 엔트리가 몇 건 조회되었는지 띄워 준다!
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM 1000_afte .
+  DATA: lv_cnt TYPE i.
+
+  CHECK sy-batch = zlea_.
+
+  DESCRIBE TABLE gt_ekko LINES lv_cnt.
+  MESSAGE s000(oo) WITH lv_cnt '건 조회되었습니다'.
+
+  "데이터가 있으면 호출
+  IF lv_cnt > 0.
+    CALL SCREEN 2000.
+  ENDIF.
+
+ENDFORM.                    " 1000_AFTE
+
+*&---------------------------------------------------------------------*
+*&      Module  2000_STATUS  OUTPUT
+*&---------------------------------------------------------------------*
+*       스크린
+*----------------------------------------------------------------------*
+MODULE 2000_status OUTPUT.
+  SET PF-STATUS '2000'.
+  SET TITLEBAR '2000'.
+ENDMODULE.                 " 2000_STATUS  OUTPUT
+
+
+*&---------------------------------------------------------------------*
+*&      Module  AV2000_X_MAKE  OUTPUT
+*&---------------------------------------------------------------------*
+*       그리드 나누기!
+*----------------------------------------------------------------------*
+MODULE av2000_x_make OUTPUT.
+  0o_dc_make : 'GO_DC2000_1' 1 2500.         "docking container
+
+  0o_sc_make : 'GO_SC2000_1' go_dc2000_1 2 1. "split container
+
+  0o_ic_make : 'GO_IC2000_1' go_sc2000_1 1 1, "inner container
+               'GO_IC2000_2' go_sc2000_1 2 1.
+
+  "헤더
+  PERFORM 0o_av_make
+   TABLES gt_ekko
+    USING 'GO_AV2000_1' go_ic2000_1
+          'ZEKKO19'   " 아밥 딕셔너리에 선언된 테이블, 구조, 뷰를
+*                    이용해서 필드카테고리를 정의할 수 있다.
+          ''.
+
+  0o_av_refresh 'GO_AV2000_1' 'X' 'X' 'X'.        "x: 열과 행을 유지해라!
+
+  "테이블
+  PERFORM 0o_av_make
+   TABLES gt_ekpo
+    USING 'GO_AV2000_2' go_ic2000_2
+          'ZEKPO19' " 프로그램 내의 내부테이블을
+*                      이용해서 필드카테고리를 정의할 수 있다.
+          ''.
+
+  0o_av_refresh 'GO_AV2000_2' 'X' 'X' 'X'.
+ENDMODULE.                 " AV2000_X_MAKE  OUTPUT
+
+*&---------------------------------------------------------------------*
+*&      Form  av2000_1_set_before
+*&---------------------------------------------------------------------*
+FORM av2000_1_set_before USING pv_av_name.                  "#EC *
+
+
+
+ENDFORM.                    "av2000_1_set_before
+
+*&---------------------------------------------------------------------*
+*&      Form  av2000_2_set_before
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+FORM av2000_2_set_before USING pv_av_name.                  "#EC *
+
+  gs_zs_av_layout-no_toolbar = 'X'.
+
+ENDFORM.                    "av2000_2_set_before
+
+
+*&---------------------------------------------------------------------*
+*&      Form  av2000_1_cell_click
+*& 헤더 cell 클릭하면 아이템 띄워줌
+*&---------------------------------------------------------------------*
+FORM av2000_1_cell_click                                    "#EC *
+  USING pv_av_name
+        pc_gubun
+        ps_row    LIKE lvc_s_row
+        ps_col    LIKE lvc_s_col
+        ps_row_no LIKE lvc_s_roid.
+
+  REFRESH gt_ekpo.
+
+  READ TABLE gt_ekko ASSIGNING FIELD-SYMBOL(<ls_ekko>) INDEX
+ps_row_no-row_id.
+  CHECK sy-subrc = 0.
+
+  CASE ps_col-fieldname.
+    WHEN 'EBELN'.
+      READ TABLE gt_ekpo_t TRANSPORTING NO FIELDS
+        WITH TABLE KEY idx01 COMPONENTS ebeln = <ls_ekko>-ebeln.
+      IF sy-subrc = 0.
+        LOOP AT gt_ekpo_t ASSIGNING FIELD-SYMBOL(<ls_ekpo_t>)
+            FROM sy-tabix USING KEY idx01.
+          IF <ls_ekpo_t>-ebeln <> <ls_ekko>-ebeln.
+            EXIT.
+          ENDIF.
+          APPEND INITIAL LINE TO gt_ekpo
+          ASSIGNING FIELD-SYMBOL(<ls_ekpo>).
+          MOVE-CORRESPONDING <ls_ekpo_t> TO <ls_ekpo>.
+        ENDLOOP.
+      ENDIF.
+
+      SORT GT_EKPO BY EBELN EBELP.
+
+      0o_av_chg_set 'GO_AV2000_2' 'X'.
+
+  ENDCASE.
+
+ENDFORM.
+
+
+*&---------------------------------------------------------------------*
+*&      Form  av2000_2_cell_click
+*&---------------------------------------------------------------------*
+FORM av2000_2_cell_click                                    "#EC *
+  USING pv_av_name
+        pc_gubun
+        ps_row    LIKE lvc_s_row
+        ps_col    LIKE lvc_s_col
+        ps_row_no LIKE lvc_s_roid.
+
+*  READ TABLE gt_eban INDEX ps_row_no-row_id.
+*  CHECK sy-subrc = 0.
+*
+*  CASE ps_col-fieldname.
+*    WHEN 'BANFN'.
+*      0t_TR 'ME53N' 'X' gt_eban-banfn gt_eban-bnfpo '' '' '' '' ''.
+*  ENDCASE.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  AV2000_1_CONTEXT_MENU
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*FORM av2000_1_context_menu USING pv_av_name
+*                                 po_menu TYPE REF TO cl_ctmenu.
+*
+**- Status 로 추가 메뉴 설정할 때.
+*  CALL METHOD po_menu->load_gui_status
+*    EXPORTING
+*      program = sy-repid
+*      status  = 'AV2000_1'
+*      menu    = po_menu.
+*
+**- 직접 명령 추가할 때.
+*  CALL METHOD po_menu->add_function
+*    EXPORTING
+*      fcode = 'AF01'
+*      text  = 'Test'.
+*
+** hide_functions , disable_functions 등으로 메뉴를 제어할 수 있다.
+*
+*ENDFORM.                    "AV2000_1_CONTEXT_MENU
+*----------------------------------------------------------------------*
+* 선택 삭제
+*----------------------------------------------------------------------*
+FORM 2000_delete.                                           "#EC CALLED
+
+*  DATA : lt_rows LIKE lvc_s_roid OCCURS 0 WITH HEADER LINE.
+*  CALL METHOD go_av2000_1->get_selected_rows
+*    IMPORTING
+*      et_row_no = lt_rows[].
+*
+*  SORT lt_rows DESCENDING BY row_id.
+*
+*  LOOP AT lt_rows.
+*    DELETE gt_eban INDEX lt_rows-row_id.
+*  ENDLOOP.
+*
+*  CLEAR : gs_zs_av_stbl, gt_zt_av_rows, gt_zt_av_roid.
+*  CALL METHOD go_av2000_1->set_selected_rows
+*    EXPORTING
+*      it_index_rows            = gt_zt_av_rows
+*      it_row_no                = gt_zt_av_roid
+*      is_keep_other_selections = 'X'.
+*
+*  0o_av_chg_set 'GO_AV2000_1' abap_true.
+**  LOOP AT lt_rows.
+**    READ TABLE &2 INDEX lt_rows-row_id.
+**    IF sy-subrc = 0.
+**      MOVE-CORRESPONDING &2 TO &3.
+**      APPEND &3.
+**    ENDIF.
+**  ENDLOOP.
+
+
+ENDFORM.                    "2000_delete
+
+
+*&---------------------------------------------------------------------*
+*& Form av2000_1_toolbar
+*&---------------------------------------------------------------------*
+*& 툴바에 커스텀 버튼 추가
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM av2000_1_toolbar
+  USING pv_av_name
+        po_object TYPE REF TO cl_alv_event_toolbar_set
+        pv_interactive.
+
+  DATA: ls_tool TYPE stb_button.
+
+  CLEAR ls_tool.
+  ls_tool-butn_type = zlea_3.
+
+  CLEAR ls_tool.
+  ls_tool-butn_type = zlea_0.
+  ls_tool-function  = zlea_crso.
+  ls_tool-icon      = icon_led_inactive.
+  ls_tool-text      = TEXT-t01.
+  APPEND ls_tool TO po_object->mt_toolbar.
+
+*  CLEAR ls_tool.
+*  ls_tool-butn_type = zlea_3.
+*
+*  CLEAR ls_tool.
+*  ls_tool-butn_type = zlea_0.
+*  ls_tool-function  = zlea_refe.
+*  ls_tool-icon      = icon_led_inactive.
+*  ls_tool-text      = TEXT-t01.
+*  APPEND ls_tool TO po_object->mT_toolbar.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form av2000_1_uc_crso
+*&---------------------------------------------------------------------*
+*& create SO 버튼(zlea_crso)을 클릭할 때 실행되는 이벤트 처리
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM av2000_1_uc_crso USING pv_av_name.
+
+  DATA: lt_rows TYPE TABLE OF lvc_s_roid.
+  DATA: lv_error.
+
+  CALL METHOD go_av2000_1->get_selected_rows
+    IMPORTING
+      et_row_no = lt_rows[].
+
+*/-- selected check validation
+  PERFORM zz_get_sel_rows TABLES lt_rows
+                          USING zlea_crso
+                          CHANGING lv_error.
+  CHECK lv_error IS INITIAL.
+
+*/-- selected check validation confrim dialog
+  PERFORM zz_set_sel_rows TABLES lt_rows
+                          USING zlea_crso.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& av2000_1_uc_refe
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM av2000_1_uc_refe USING pv_av_name.
+
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form zz_get_sel_rows
+*&---------------------------------------------------------------------*
+*& CREATE SO를 눌렀을 때 선택 상태가 올바른지 검증! (유효성 검사)
+*&---------------------------------------------------------------------*
+*&      --> LT_ROWS
+*&      --> ZLEA_CRSO
+*&      <-- LV_ERROR
+*&---------------------------------------------------------------------*
+FORM zz_get_sel_rows  TABLES   pt_rows STRUCTURE lvc_s_roid
+                      USING    pv_ucomm
+                      CHANGING pv_error.
+
+*/--공란에러
+  IF pt_rows[] IS INITIAL.
+  ELSE.
+* 1개건만 진행
+    DESCRIBE TABLE pt_rows LINES DATA(lv_cnt).
+    IF lv_cnt > 1.
+      MESSAGE e000(oo) WITH 'Select only 1 row'.
+    ENDIF.
+  ENDIF.
+
+
+  LOOP AT pt_rows ASSIGNING FIELD-SYMBOL(<ls_rows>).
+    READ TABLE gt_ekko ASSIGNING FIELD-SYMBOL(<ls_ekko>)
+      INDEX <ls_rows>-row_id.
+    IF sy-subrc = 0.
+      CASE pv_ucomm.
+        WHEN 'CRSO'.
+          PERFORM zz_get_selrows_precheck USING <ls_ekko> CHANGING pv_error.
+      ENDCASE.
+    ENDIF.
+
+  ENDLOOP.
+
+  CHECK pv_error IS INITIAL.
+
+  CASE pv_ucomm.
+    WHEN 'CRSO'.
+      PERFORM zz_set_confirm_step USING pv_ucomm CHANGING pv_error.
+  ENDCASE.
+
+
+
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form zz_set_confirm_step
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*&      --> PV_UCOMM
+*&      --> LV_ANSWER
+*&---------------------------------------------------------------------*
+FORM zz_set_confirm_step  USING    pv_ucomm
+                          CHANGING pv_error.
+
+  DATA: lv_textline1 TYPE spop-textline1,
+        lv_textline2 TYPE spop-textline2.
+
+  DATA: lv_answer.
+
+  CASE pv_ucomm.
+    WHEN 'CRSO'.
+      lv_textline1 = TEXT-m01.
+  ENDCASE.
+
+  CALL FUNCTION 'POPUP_TO_CONFIRM_STEP'
+    EXPORTING
+      defaultoption  = 'N'
+      textline1      = lv_textline1
+*     TEXTLINE2      = ' '
+      titel          = '[Saving Confirm]'
+      start_column   = 55
+      start_row      = 10
+      cancel_display = ''
+    IMPORTING
+      answer         = lv_answer.
+
+  IF lv_answer <> zlea_j.
+    pv_error = zlea_x.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form zz_set_sel_rows
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*&      --> LT_ROWS
+*&      --> ZLEA_CRSO
+*&---------------------------------------------------------------------*
+FORM zz_set_sel_rows  TABLES   pt_rows STRUCTURE lvc_s_roid
+                      USING    pv_ucomm.
+
+
+  LOOP AT pt_rows ASSIGNING FIELD-SYMBOL(<ls_rows>).
+    READ TABLE gt_ekko ASSIGNING FIELD-SYMBOL(<ls_ekko>)
+      INDEX <ls_rows>-row_id.
+    IF sy-subrc = 0.
+      CASE pv_ucomm.
+        WHEN 'CRSO'.
+          PERFORM zz_set_sel_rows_ucomm USING pv_ucomm
+                                     CHANGING <ls_ekko>.
+
+* Screen Refresh / Reselect
+          perform 1000_onli.
+          0o_av_chg_set 'GO_AV2000_1' 'X'.
+          0o_av_chg_set 'GO_AV2000_2' 'X'.
+
+      ENDCASE.
+    ENDIF.
+
+  ENDLOOP.
+
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form zz_set_sel_rows_ucomm
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*&      --> PV_UCOMM
+*&      <-- <LS_EKKO>
+*&---------------------------------------------------------------------*
+FORM zz_set_sel_rows_ucomm  USING    pv_ucomm
+                            CHANGING ps_ekko LIKE LINE OF gt_ekko.
+
+  DATA: ls_return TYPE bapiret2.
+  DATA: lt_ekpo   TYPE zttekpo19.
+
+  lt_ekpo = gt_ekpo_t.
+
+  DELETE lt_ekpo WHERE ebeln <> ps_ekko-ebeln.
+
+  CALL METHOD zcl19_lec_auto_plan=>zz_get_so_rtn
+    EXPORTING
+      is_po_h   = ps_ekko
+      it_po_i   = lt_ekpo
+    IMPORTING
+      es_return = ls_return.
+
+  CASE ls_return-type.
+    WHEN 'S'.
+      MESSAGE s000(oo) WITH 'Sucessful Saved with' ls_return-field.
+    WHEN OTHERS.
+      MESSAGE s000(oo) WITH 'Fail to Save S/O Document'.
+  ENDCASE.
+
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form zz_get_selrows_precheck
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*&      --> <LS_EKKO>
+*&      <-- LV_ANSWER
+*&---------------------------------------------------------------------*
+FORM zz_get_selrows_precheck  USING    ps_ekko LIKE LINE OF gt_ekko
+                              CHANGING pv_error.
+
+  DATA: lv_bstnk TYPE vbak-bstnk.
+
+  lv_bstnk = ps_ekko-ebeln.
+
+  READ TABLE gt_poso TRANSPORTING NO FIELDS
+    WITH TABLE KEY idx01 COMPONENTS bstnk = lv_bstnk.
+  IF sy-subrc = 0.
+    pv_error = zlea_x.
+    MESSAGE i000(oo) WITH 'There is aleady PO-SO link exist'.
+  ENDIF.
+
+ENDFORM.
