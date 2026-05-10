@@ -1,5 +1,5 @@
 # SAP_O2C_Program
-SAP ERP O2C Program<br><br><br>
+SAP ERP O2C Program<br><br>
 
 ZA19A00010 : Create PO -> SO<br>
 ZA19A00020 : Create SO -> DO<br>
