@@ -1,10 +1,15 @@
 # SAP_O2C_Program
 SAP ERP O2C Program<br><br>
-
+Purchase Order(구매 오더) = 고객이 주문함<br>
+Sales Order(판매 오더) = 고객이 주문함<br>
+Goods Issue(출고) = 창고에서 꺼냄<br>
+Billing Issue(청구) -> 청구함(돈을 받음) <br>
+<br>
+**프로그램**<br>
 ZA19A00010 : Create PO -> SO<br>
 ZA19A00020 : Create SO -> DO<br>
 ZA19A00030 : Create DO -> GI 날짜 업데이트 발생<br>
-ZA19A00040 : Create DO -> BI<br><br>
+ZA19A00040 : Create BI -> BI<br><br>
 
 ZA19A00050 : Display Billing Document<br>
 ZA19A00060 : SY Purchase Auto Processing (10~40 프로그램을 실행시키는 메인 프로그램)<br>
